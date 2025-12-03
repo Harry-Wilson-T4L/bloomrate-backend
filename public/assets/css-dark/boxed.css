@@ -1,0 +1,55 @@
+@media (max-width: 1024px) and (min-width: 992px){
+	.horizontalMenu>.horizontalMenu-list>li>a{
+		padding-left: 11px !important;
+		padding-right: 11px !important;
+	}
+}
+@media (min-width: 1025px){
+	.header-nav{
+		width:1170px !important;
+	}
+	.page-main {
+		z-index:0;
+	}
+	.page{
+		max-width:1170px;
+		margin:0 auto;
+		background:#1c1131;
+		position:relative;
+		box-shadow: rgba(0, 0, 0, 0.3) 0px 5px 0px 0px, rgba(0, 0, 0, 0.3) 0px 5px 25px 0px;
+	}
+	.page-main:after{
+		margin: 0 auto;
+		max-width: 1170px;
+		right: 0;
+	}
+	body{
+		background:#2a223a !important
+	}
+	.horizontalMenu>.horizontalMenu-list>li>a{
+		padding: 0.8rem 1rem 0.8rem !important;
+	}
+	.sticky-pin .horizontal-main {
+		box-shadow: 0 2px 8px 0 rgba(40,37,89,.2);
+		background: #160d27;
+		max-width: 1170px;
+	}
+	
+	/*Left-toggle-menu */
+	.side-header .app-header{
+		width:1170px;
+		margin:0 auto;
+	}
+	.app-sidebar{
+		position:absolute !important;
+	}
+	.first-sidemenu{
+		width:auto !important;
+	}
+	.first-sidemenu ul{
+		width:100px !important;
+	}
+	.second-sidemenu {
+		left:225px !important
+	}
+}

@@ -1,0 +1,33 @@
+{
+    "private": true,
+    "scripts": {
+        "dev": "npm run development",
+        "development": "mix",
+        "watch": "mix watch",
+        "watch-poll": "mix watch -- --watch-options-poll=1000",
+        "hot": "mix watch --hot",
+        "prod": "npm run production",
+        "production": "mix --production"
+    },
+    "devDependencies": {
+        "axios": "^0.21",
+        "laravel-mix": "^6.0.6",
+        "lodash": "^4.17.19",
+        "postcss": "^8.1.14"
+    },
+    "dependencies": {
+        "agora-access-token": "^2.0.4",
+        "dotenv": "^16.4.5",
+        "express": "^4.17.1",
+        "express-validator": "^7.0.1",
+        "fcm-node": "^1.6.1",
+        "firebase-admin": "^9.12.0",
+        "fs": "0.0.1-security",
+        "https": "^1.0.0",
+        "mysql": "github:mysqljs/mysql",
+        "mysql2": "^3.6.1",
+        "node-pushnotifications": "^1.7.1",
+        "sequelize": "^6.33.0",
+        "socket.io": "^4.2.0"
+    }
+}
