@@ -22,7 +22,7 @@ Route::get('/', function () {
     return response()->json(['message' => 'Welcome to Bloom Rate API . Version : 1.0.0'], 200);
 });
 
-// Auth Routes
+
 Route::controller(AuthController::class)->group( function(){
     Route::prefix('auth')->group(function () {
         Route::post('login', 'login');
