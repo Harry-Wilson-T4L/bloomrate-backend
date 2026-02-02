@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BloomRate Notification Test</title>
+    <script src="https://cdn.socket.io/4.2.0/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .control-panel {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status-panel {
+            background: #e9ecef;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .status-connected {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .status-disconnected {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        input {
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+        #logs {
+            margin-top: 20px;
+            background: #f0f0f0;
+            padding: 15px;
+            height: 400px;
+            overflow-y: scroll;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .log-success {
+            color: #28a745;
+        }
+        .log-error {
+            color: #dc3545;
+        }
+        .notification-count {
+            font-size: 48px;
+            color: #007bff;
+            font-weight: bold;
+        }
+        .trigger-section {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔔 BloomRate Notification Test</h1>
+    
+    <div class="control-panel">
+        <h2>Connection Control</h2>
+        <label>User ID: <input type="number" id="userId" value="1" min="1"></label>
+        <button id="connectBtn" onclick="joinRoom()">Connect & Join Room</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div class="status-panel">
+        <h2>Status</h2>
+        <p>Connection: <span id="status" class="status-disconnected">Disconnected</span></p>
+        <p>Current Room: <span id="currentRoom">--</span></p>
+        <h2>Notification Count: <span id="count" class="notification-count">--</span></h2>
+    </div>
+
+    <div class="trigger-section">
+        <h3>📤 Manual Test Trigger</h3>
+        <p>To manually trigger a notification, run this command in a new terminal:</p>
+        <code style="display: block; background: #fff; padding: 10px; border-radius: 4px; margin-top: 10px;">
+            curl -X POST http://localhost:3002/send-notification -H "Content-Type: application/json" -d "{\"user_id\": <span id="curlUserId">1</span>, \"type\": \"notification_count\", \"data\": 5}"
+        </code>
+        <p style="margin-top: 10px;">Or use this button to send a test notification (simulates the Laravel backend):</p>
+        <button onclick="sendTestNotification()" id="testNotifyBtn" disabled>Send Test Notification</button>
+    </div>
+
+    <div>
+        <h3>📋 Activity Logs</h3>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        // Change this when switching environments (e.g. local: 'http://localhost:3002')
+        const SOCKET_SERVER_URL = 'https://admin.bloomrate.com:3002';
+
+        let socket;
+        let currentUserId;
+        
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : '';
+            logs.innerHTML += `<div class="log-entry ${className}">[${timestamp}] ${message}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateUI(connected) {
+            document.getElementById('connectBtn').disabled = connected;
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('userId').disabled = connected;
+            document.getElementById('testNotifyBtn').disabled = !connected;
+        }
+
+        function joinRoom() {
+            currentUserId = document.getElementById('userId').value;
+            
+            if (!currentUserId) {
+                alert('Please enter a valid User ID');
+                return;
+            }
+
+            log('Attempting to connect to Socket.IO server at ' + SOCKET_SERVER_URL + '...');
+            
+            // Connect to Socket.IO server
+            socket = io(SOCKET_SERVER_URL, {
+                transports: ['websocket', 'polling'],
+                query: { userId: currentUserId }
+            });
+
+            socket.on('connect', () => {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'status-connected';
+                log('✅ Connected to Socket.IO server (Socket ID: ' + socket.id + ')', 'success');
+                
+                // Join user room
+                socket.emit('user_join', { user_id: currentUserId });
+                const roomName = `user_${currentUserId}`;
+                document.getElementById('currentRoom').textContent = roomName;
+                document.getElementById('curlUserId').textContent = currentUserId;
+                log(`✅ Joined room: ${roomName}`, 'success');
+                
+                updateUI(true);
+            });
+
+            socket.on('response', (data) => {
+                log(`📩 Received response: ${JSON.stringify(data)}`);
+                
+                if (data.object_type === 'notification_count') {
+                    document.getElementById('count').textContent = data.data;
+                    log(`🔔 Notification count updated: ${data.data}`, 'success');
+                } else if (data.object_type === 'message_count') {
+                    log(`💬 Message count received: ${data.data}`, 'success');
+                } else {
+                    log(`📨 Other response type: ${data.object_type}`);
+                }
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status-disconnected';
+                document.getElementById('currentRoom').textContent = '--';
+                log('❌ Disconnected from server', 'error');
+                updateUI(false);
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection Error: ${error.message}`, 'error');
+                document.getElementById('status').textContent = 'Connection Failed';
+                document.getElementById('status').className = 'status-disconnected';
+            });
+
+            socket.on('error', (error) => {
+                log(`❌ Error: ${JSON.stringify(error)}`, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                log('Manually disconnected');
+            }
+        }
+
+        async function sendTestNotification() {
+            if (!currentUserId) {
+                alert('Please connect first');
+                return;
+            }
+
+            log('Sending test notification via HTTP POST...');
+            
+            try {
+                const response = await fetch(SOCKET_SERVER_URL + '/send-notification', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: parseInt(currentUserId),
+                        type: 'notification_count',
+                        data: Math.floor(Math.random() * 20) + 1  // Random count 1-20
+                    })
+                });
+
+                const result = await response.json();
+                log(`✅ Test notification sent successfully: ${JSON.stringify(result)}`, 'success');
+            } catch (error) {
+                log(`❌ Failed to send test notification: ${error.message}`, 'error');
+            }
+        }
+
+        // Log initial state
+        log('Test page loaded. Enter a User ID and click "Connect & Join Room" to begin.');
+    </script>
+</body>
+</html>

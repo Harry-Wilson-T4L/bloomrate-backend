@@ -2,12 +2,30 @@ const express = require('express');
 const app = express();
 var fs = require('fs');
 require('dotenv').config();
+
+// HTTPS Configuration (comment for local testing)
 const options = {
     key: fs.readFileSync('/etc/letsencrypt/live/admin.bloomrate.com/privkey.pem'),
     cert: fs.readFileSync('/etc/letsencrypt/live/admin.bloomrate.com/fullchain.pem'),
-      
-  };
+};
 const server = require('https').createServer(options, app);
+
+// // HTTP Configuration for local testing
+// const server = require('http').createServer(app);
+
+// Enable CORS for HTTP requests (required for browser fetch/ajax)
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    
+    next();
+});
 
 // Enable JSON Parsing
 app.use(express.json());
