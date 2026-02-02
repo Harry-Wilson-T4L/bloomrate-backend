@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Route;
 
 // Create a new route for base url of api
 Route::get('/', function () {
-    return response()->json(['message' => 'Welcome to Bloom Rate API . Version : 1.0.0'], 200);
+    return response()->json(['message' => 'Welcome to BloomRate API . Version : 1.0.0'], 200);
 });
 
 
