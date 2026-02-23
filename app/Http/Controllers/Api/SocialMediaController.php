@@ -217,7 +217,7 @@ class SocialMediaController extends Controller
     // ->latest();
 
 
-            $query = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment'  , 'likedByAuthUser' ,  'parent_post.user',           'favorites' => fn($q) => $q->where('user_id', $authId),
+            $query = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment'  , 'likedByAuthUser' ,  'parent_post.user', 'parent_post.attachment',           'favorites' => fn($q) => $q->where('user_id', $authId),
             'saves'     => fn($q) => $q->where('user_id', $authId),
             'likes'     => fn($q) => $q->where('like_type', 'post')]
 )->has('user')
@@ -466,7 +466,7 @@ class SocialMediaController extends Controller
 
 
         if ($request->watched_video_id && $request->offset == 0) {
-            $watchedPost = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment', 'parent_post'])
+            $watchedPost = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment', 'parent_post', 'parent_post.attachment'])
                 ->withCount(['comments','likes','post_view'])
                 ->where('is_block', '0')
                 ->where('post_type', 'video')
@@ -478,7 +478,7 @@ class SocialMediaController extends Controller
             }
         }
 
-        $query = Post::with(['user:id,full_name,user_name,profile_image,status_id','attachment' , 'parent_post.user'])
+        $query = Post::with(['user:id,full_name,user_name,profile_image,status_id','attachment' , 'parent_post.user', 'parent_post.attachment'])
             ->withCount(['comments','likes','post_view'])
             ->where('is_block', '0')
             ->where('post_type', 'video')
@@ -584,7 +584,7 @@ class SocialMediaController extends Controller
         ]);
 
         try {
-            $posts = Post::whereId($request->post_id)->with('user:id,full_name,user_name,profile_image,status_id', 'attachment'  , 'likedByAuthUser','parent_post.user')->withCount('comments', 'likes', 'post_view')->first();
+            $posts = Post::whereId($request->post_id)->with('user:id,full_name,user_name,profile_image,status_id', 'attachment'  , 'likedByAuthUser','parent_post.user', 'parent_post.attachment')->withCount('comments', 'likes', 'post_view')->first();
 
             if ($posts->user_id != auth()->id()) {
                 $isPostViewed = PostView::where(['user_id' => auth()->id(), 'post_id' => $request->post_id])->exists();
@@ -1654,7 +1654,7 @@ ffmpeg -i \"$tempVideoPath\" \
                 return $this->errorResponse('No posts have been saved.', 400);
             }
 
-            $posts = Post::with('user')->withCount('comments', 'likes', 'post_view')->whereIn('id', $savedPost)->latest()->get();
+            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment'])->withCount('comments', 'likes', 'post_view')->whereIn('id', $savedPost)->latest()->get();
 
             $data = [
                 'total_posts'     =>  count($posts),
@@ -1746,7 +1746,7 @@ ffmpeg -i \"$tempVideoPath\" \
                 return $this->errorResponse('No posts have been favourite.', 400);
             }
 
-            $posts = Post::with('user')->withCount('comments', 'likes', 'post_view')->whereIn('id', $favouritePost)->latest()->get();
+            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment'])->withCount('comments', 'likes', 'post_view')->whereIn('id', $favouritePost)->latest()->get();
 
             $data = [
                 'total_posts'     =>  count($posts),
