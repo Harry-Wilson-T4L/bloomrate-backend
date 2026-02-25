@@ -188,6 +188,10 @@ io.on('connection', function (socket) {
         var receiver_room = "user_" + object.receiver_id;        
 
         send_message(object, function (response) {
+            if (response && response.error && response.code === 'blocked') {
+                io.to(sender_room).emit('error', { object_type: "get_message", message: response.message || "You cannot send messages to this user." });
+                return;
+            }
             if (response) {
                 // io.to(receiver_room).emit('response', { object_type: "message_count", data: 0 });
 
