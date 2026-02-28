@@ -394,6 +394,14 @@ var chat_list = function (object, callback) {
             WHERE chats.receiver_id = ${object.user_id} 
               AND chats.deleted_at IS NULL 
               AND chats.group_id IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 
+                    FROM user_blocks ub
+                    WHERE 
+                        (ub.user_id = ${object.user_id} AND ub.blocked_user_id = users.id)
+                        OR
+                        (ub.user_id = users.id AND ub.blocked_user_id = ${object.user_id})
+            )
         )
         UNION
         (
@@ -427,6 +435,14 @@ var chat_list = function (object, callback) {
             WHERE chats.sender_id = ${object.user_id} 
               AND chats.deleted_at IS NULL 
               AND chats.group_id IS NULL
+              AND NOT EXISTS (
+                    SELECT 1 
+                    FROM user_blocks ub
+                    WHERE 
+                        (ub.user_id = ${object.user_id} AND ub.blocked_user_id = users.id)
+                        OR
+                        (ub.user_id = users.id AND ub.blocked_user_id = ${object.user_id})
+            )
         )
         ) AS p_pn
             GROUP BY 
