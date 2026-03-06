@@ -221,7 +221,7 @@ class SocialMediaController extends Controller
             'saves'     => fn($q) => $q->where('user_id', $authId),
             'likes'     => fn($q) => $q->where('like_type', 'post')]
 )->has('user')
-                ->whereNotIn('user_id', $blockUserIds)->withCount('comments', 'likes', 'post_view')->latest()
+                ->whereNotIn('user_id', $blockUserIds)->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->latest()
             // ->whereNotIn('id', $reportedPost)
             ->where('is_block', '0')
             ->when($request->has('list_type') && $request->list_type == 'trending' && $request->interest_id > 0, function ($q) use ($request) {
@@ -466,8 +466,8 @@ class SocialMediaController extends Controller
 
 
         if ($request->watched_video_id && $request->offset == 0) {
-            $watchedPost = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment', 'parent_post', 'parent_post.attachment'])
-                ->withCount(['comments','likes','post_view'])
+            $watchedPost = Post::with(['user:id,full_name,user_name,profile_image,status_id', 'attachment', 'parent_post', 'parent_post.attachment', 'favorites' => fn($q) => $q->where('user_id', $authId), 'saves' => fn($q) => $q->where('user_id', $authId)])
+                ->withCount(['comments','likes','post_view','saves','favorites'])
                 ->where('is_block', '0')
                 ->where('post_type', 'video')
                 ->where('id', $request->watched_video_id)
@@ -478,8 +478,8 @@ class SocialMediaController extends Controller
             }
         }
 
-        $query = Post::with(['user:id,full_name,user_name,profile_image,status_id','attachment' , 'parent_post.user', 'parent_post.attachment'])
-            ->withCount(['comments','likes','post_view'])
+        $query = Post::with(['user:id,full_name,user_name,profile_image,status_id','attachment' , 'parent_post.user', 'parent_post.attachment', 'favorites' => fn($q) => $q->where('user_id', $authId), 'saves' => fn($q) => $q->where('user_id', $authId)])
+            ->withCount(['comments','likes','post_view','saves','favorites'])
             ->where('is_block', '0')
             ->where('post_type', 'video')
             ->whereNotIn('id', $myPostIds)
@@ -584,7 +584,13 @@ class SocialMediaController extends Controller
         ]);
 
         try {
-            $posts = Post::whereId($request->post_id)->with('user:id,full_name,user_name,profile_image,status_id', 'attachment'  , 'likedByAuthUser','parent_post.user', 'parent_post.attachment')->withCount('comments', 'likes', 'post_view')->first();
+            $posts = Post::whereId($request->post_id)->with([
+                'user:id,full_name,user_name,profile_image,status_id', 'attachment', 'likedByAuthUser',
+                'parent_post.user', 'parent_post.attachment',
+                'favorites' => fn($q) => $q->where('user_id', auth()->id()),
+                'saves'     => fn($q) => $q->where('user_id', auth()->id()),
+                'likes'     => fn($q) => $q->where('like_type', 'post'),
+            ])->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->first();
 
             if ($posts->user_id != auth()->id()) {
                 $isPostViewed = PostView::where(['user_id' => auth()->id(), 'post_id' => $request->post_id])->exists();
@@ -614,7 +620,7 @@ class SocialMediaController extends Controller
         $blockUserId = UserBlock::where('user_id', auth()->id())->pluck('blocked_user_id')->toArray();
 
         if ($request->search_type == "post") {
-            $posts = Post::with('user')->withCount('comments', 'likes', 'post_view')->latest()
+            $posts = Post::with(['user', 'favorites' => fn($q) => $q->where('user_id', auth()->id()), 'saves' => fn($q) => $q->where('user_id', auth()->id())])->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->latest()
                 ->where('title', 'like', '%' . $request->search_key . '%')
                 ->whereNotIn('id', $reportedPost)
                 ->whereNotIn('user_id', $blockUserId)
@@ -1654,7 +1660,7 @@ ffmpeg -i \"$tempVideoPath\" \
                 return $this->errorResponse('No posts have been saved.', 400);
             }
 
-            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment'])->withCount('comments', 'likes', 'post_view')->whereIn('id', $savedPost)->latest()->get();
+            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment', 'favorites' => fn($q) => $q->where('user_id', auth()->id()), 'saves' => fn($q) => $q->where('user_id', auth()->id())])->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->whereIn('id', $savedPost)->latest()->get();
 
             $data = [
                 'total_posts'     =>  count($posts),
@@ -1746,7 +1752,7 @@ ffmpeg -i \"$tempVideoPath\" \
                 return $this->errorResponse('No posts have been favourite.', 400);
             }
 
-            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment'])->withCount('comments', 'likes', 'post_view')->whereIn('id', $favouritePost)->latest()->get();
+            $posts = Post::with(['user', 'attachment', 'parent_post.user', 'parent_post.attachment', 'favorites' => fn($q) => $q->where('user_id', auth()->id()), 'saves' => fn($q) => $q->where('user_id', auth()->id())])->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->whereIn('id', $favouritePost)->latest()->get();
 
             $data = [
                 'total_posts'     =>  count($posts),
@@ -2714,12 +2720,14 @@ ffmpeg -i \"$tempVideoPath\" \
       
         try {
 
-            $post = Post::where("id", $request->post_id)->withCount('comments', 'likes', 'post_view')->first();
+            $post = Post::where("id", $request->post_id)->withCount('comments', 'likes', 'post_view', 'saves', 'favorites')->first();
 
             $data = [
                 'likes_count'           =>  $post->likes_count,
                 'comments_count'        =>  $post->comments_count,
                 'post_view_count'       =>  $post->post_view_count,
+                'saves_count'           =>  $post->saves_count,
+                'favorites_count'       =>  $post->favorites_count,
                 'is_like'               =>  Like::where(['user_id' => auth()->id(), 'record_id' => $post->id, 'like_type' => 'post'])->count(),
                 'reaction_types'        =>  $this->reaction_types($post->id),
                 'total_share_count'     =>  Post::where(['parent_id' => $post->id, 'is_share' => '1'])->count(),

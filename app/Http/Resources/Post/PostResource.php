@@ -102,6 +102,9 @@ class PostResource extends JsonResource
 
             'total_share_count' => $this->shares_count ?? 0, // preload with withCount in controller
 
+            'saves_count'       => $this->saves_count ?? 0,
+            'favorites_count'   => $this->favorites_count ?? 0,
+
             'is_favorite'       => $this->favorites->isNotEmpty(),
             'is_save'           => $this->saves->isNotEmpty(),
 
