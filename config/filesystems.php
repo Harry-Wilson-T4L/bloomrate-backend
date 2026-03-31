@@ -56,6 +56,11 @@ return [
             'visibility' => 'private',
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' =>  env('AWS_THROW', false),
+            // Helps large HLS batches / slow links (AWS SDK Guzzle); tune on production if uploads stall
+            'http' => [
+                'timeout' => (float) env('AWS_HTTP_TIMEOUT', 300),
+                'connect_timeout' => (float) env('AWS_HTTP_CONNECT_TIMEOUT', 30),
+            ],
         ],
 
     ],

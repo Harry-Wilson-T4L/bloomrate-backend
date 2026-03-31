@@ -2788,6 +2788,8 @@ ffmpeg -i \"$tempVideoPath\" \
             'files' => $names,
         ]);
 
+        $diagnosticLogged = false;
+
         foreach ($names as $file) {
             $filePath = $localHlsDir . DIRECTORY_SEPARATOR . $file;
             $s3Path = $prefix . '/' . $file;
@@ -2800,28 +2802,46 @@ ffmpeg -i \"$tempVideoPath\" \
                 continue;
             }
 
+            $ok = false;
             $fileStream = @fopen($filePath, 'rb');
-            if ($fileStream === false) {
+            if ($fileStream !== false) {
+                try {
+                    $ok = Storage::disk('s3')->writeStream($s3Path, $fileStream);
+                } catch (\Throwable $e) {
+                    Log::error('HLS S3: writeStream threw', [
+                        's3_path' => $s3Path,
+                        'exception' => $e::class,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $ok = false;
+                } finally {
+                    if (is_resource($fileStream)) {
+                        fclose($fileStream);
+                    }
+                }
+            } else {
                 Log::error('HLS S3: fopen failed', ['path' => $filePath]);
-                $failed++;
-                $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'fopen_failed'];
-
-                continue;
             }
 
-            $ok = false;
-            try {
-                $ok = Storage::disk('s3')->writeStream($s3Path, $fileStream);
-            } catch (\Throwable $e) {
-                Log::error('HLS S3: writeStream threw', [
-                    's3_path' => $s3Path,
-                    'exception' => $e::class,
-                    'message' => $e->getMessage(),
-                ]);
-                $ok = false;
-            } finally {
-                if (is_resource($fileStream)) {
-                    fclose($fileStream);
+            if (!$ok) {
+                $body = @file_get_contents($filePath);
+                if ($body !== false) {
+                    try {
+                        $ok = Storage::disk('s3')->put($s3Path, $body);
+                    } catch (\Throwable $e) {
+                        Log::error('HLS S3: put() fallback threw', [
+                            's3_path' => $s3Path,
+                            'exception' => $e::class,
+                            'message' => $e->getMessage(),
+                        ]);
+                        $ok = false;
+                    }
+                    if ($ok) {
+                        Log::info('HLS S3: uploaded via put() after writeStream failed', [
+                            's3_path' => $s3Path,
+                            'bytes' => strlen($body),
+                        ]);
+                    }
                 }
             }
 
@@ -2832,7 +2852,12 @@ ffmpeg -i \"$tempVideoPath\" \
             } else {
                 $failed++;
                 $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'write_failed'];
-                Log::error('HLS S3: writeStream returned false', ['s3_path' => $s3Path]);
+                Log::error('HLS S3: upload failed after writeStream and put fallback', [
+                    's3_path' => $s3Path,
+                    'local_size' => @filesize($filePath) ?: null,
+                ]);
+                $this->logHlsS3ThrowingDiskDiagnosticOnce($diagnosticLogged, $s3Path);
+                // $diagnosticLogged updated by ref inside (log once per batch)
             }
         }
 
@@ -2843,6 +2868,42 @@ ffmpeg -i \"$tempVideoPath\" \
         ]);
 
         return ['uploaded' => $uploaded, 'failed' => $failed, 'files' => $details];
+    }
+
+    /**
+     * When writeStream/put return false with AWS_THROW=false, AWS never surfaces the reason.
+     * Run one small PutObject with throw=true and log the real exception (once per batch).
+     */
+    private function logHlsS3ThrowingDiskDiagnosticOnce(bool &$logged, string $failingS3Path): void
+    {
+        if ($logged) {
+            return;
+        }
+        $logged = true;
+
+        $base = config('filesystems.disks.s3');
+        if (! is_array($base) || ($base['driver'] ?? '') !== 's3') {
+            return;
+        }
+
+        try {
+            $cfg = array_merge($base, ['throw' => true]);
+            $disk = Storage::build($cfg);
+            $dir = dirname($failingS3Path);
+            $probeKey = ($dir !== '.' && $dir !== '' ? $dir . '/' : '') . '.hls-s3-probe-' . uniqid('', true) . '.txt';
+            $disk->put($probeKey, 'bloomrate-probe');
+            $disk->delete($probeKey);
+            Log::warning('HLS S3: throwing-disk probe in same prefix succeeded — S3 accepts writes here; compare failing key (length/chars) or retry without ACL/KMS issues.', [
+                'failing_s3_path' => $failingS3Path,
+                'probe_key' => $probeKey,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('HLS S3: throwing-disk probe FAILED — fix using this AWS error (IAM, ACL blocked, DNS, TLS, clock, endpoint)', [
+                'message' => $e->getMessage(),
+                'exception' => $e::class,
+                'failing_s3_path' => $failingS3Path,
+            ]);
+        }
     }
 
     /**
