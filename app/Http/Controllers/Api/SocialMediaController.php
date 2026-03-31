@@ -1068,29 +1068,29 @@ ffmpeg -i \"$tempVideoPath\" \
                             fclose($fileStream);
                         }
                         
-                        // Generate and upload thumbnail
-                        $media_thumbnail = null;
-                        $thumb_file_name = mt_rand() . time() . '.png';
-                        $tempThumbPath = storage_path("app/{$thumb_file_name}");
-                        $cmdThumb = "ffmpeg -ss 00:00:02 -i \"$tempVideoPath\" -frames:v 1 \"$tempThumbPath\"";
-                        exec($cmdThumb);
+                        // // Generate and upload thumbnail
+                        // $media_thumbnail = null;
+                        // $thumb_file_name = mt_rand() . time() . '.png';
+                        // $tempThumbPath = storage_path("app/{$thumb_file_name}");
+                        // $cmdThumb = "ffmpeg -ss 00:00:02 -i \"$tempVideoPath\" -frames:v 1 \"$tempThumbPath\"";
+                        // exec($cmdThumb);
                         
-                        if (file_exists($tempThumbPath)) {
-                            $thumb_stream = fopen($tempThumbPath, 'r');
-                            $thumb_s3_path = 'media/thumb/' . $thumb_file_name;
-                            $thumbUploadSuccess = Storage::disk('s3')->writeStream($thumb_s3_path, $thumb_stream);
-                            fclose($thumb_stream);
+                        // if (file_exists($tempThumbPath)) {
+                        //     $thumb_stream = fopen($tempThumbPath, 'r');
+                        //     $thumb_s3_path = 'media/thumb/' . $thumb_file_name;
+                        //     $thumbUploadSuccess = Storage::disk('s3')->writeStream($thumb_s3_path, $thumb_stream);
+                        //     fclose($thumb_stream);
                         
-                            if ($thumbUploadSuccess) {
-                                $media_thumbnail = $thumb_s3_path;
-                            } else {
-                                Log::error('Failed to upload video thumbnail.');
-                            }
-                        }
+                        //     if ($thumbUploadSuccess) {
+                        //         $media_thumbnail = $thumb_s3_path;
+                        //     } else {
+                        //         Log::error('Failed to upload video thumbnail.');
+                        //     }
+                        // }
                         
                         // Clean up temp files (optional)
                         @unlink($tempVideoPath);
-                        @unlink($tempThumbPath);
+                        // @unlink($tempThumbPath);
                         
                         // Store the master .m3u8 path in DB (optional)
                         $media_path = "media/hls/{$base_name}/180p.m3u8";
