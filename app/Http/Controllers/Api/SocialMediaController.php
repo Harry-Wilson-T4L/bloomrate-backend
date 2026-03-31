@@ -1036,40 +1036,61 @@ ffmpeg -i \"$tempVideoPath\" \
                             'output_full' => strlen($ffmpegOutputStr) > 8000 ? substr($ffmpegOutputStr, 0, 8000) . '...' : $ffmpegOutputStr,
                         ]);
 
-                        $hlsStats = $this->uploadHlsDirectoryToS3($localHlsDir, (string) $base_name);
-                        if ($hlsStats['failed'] > 0) {
-                            Log::warning('HLS S3: some files failed to upload', $hlsStats);
+                        $hlsFiles = scandir($localHlsDir);
+
+                        foreach ($hlsFiles as $file) {
+                            if (in_array($file, ['.', '..'])) continue;
+                        
+                            $filePath = $localHlsDir . '/' . $file;
+                        
+                            $fileStream = fopen($filePath, 'r');
+                        
+                            if (!$fileStream) {
+                                Log::error("Failed to open file: {$filePath}");
+                                continue;
+                            }
+                        
+                            $s3Path = "media/hls/{$base_name}/{$file}";
+                        
+                            try {
+                                Storage::disk('s3')->writeStream($s3Path, $fileStream);
+                        
+                                Log::info("Uploaded successfully: {$file}");
+                        
+                            } catch (\Throwable $e) {
+                                Log::error("S3 Upload Failed: {$file}", [
+                                    'message' => $e->getMessage(),
+                                    'code' => $e->getCode(),
+                                    'trace' => $e->getTraceAsString(),
+                                ]);
+                            }
+                        
+                            fclose($fileStream);
                         }
-                        if ($hlsStats['uploaded'] === 0 && $hlsStats['files'] === []) {
-                            Log::error('HLS: no local HLS files or zero S3 uploads after ffmpeg.', [
-                                'base_name' => $base_name,
-                                'ffmpeg_exit' => $ffmpegExit,
-                            ]);
+                        
+                        // Generate and upload thumbnail
+                        $media_thumbnail = null;
+                        $thumb_file_name = mt_rand() . time() . '.png';
+                        $tempThumbPath = storage_path("app/{$thumb_file_name}");
+                        $cmdThumb = "ffmpeg -ss 00:00:02 -i \"$tempVideoPath\" -frames:v 1 \"$tempThumbPath\"";
+                        exec($cmdThumb);
+                        
+                        if (file_exists($tempThumbPath)) {
+                            $thumb_stream = fopen($tempThumbPath, 'r');
+                            $thumb_s3_path = 'media/thumb/' . $thumb_file_name;
+                            $thumbUploadSuccess = Storage::disk('s3')->writeStream($thumb_s3_path, $thumb_stream);
+                            fclose($thumb_stream);
+                        
+                            if ($thumbUploadSuccess) {
+                                $media_thumbnail = $thumb_s3_path;
+                            } else {
+                                Log::error('Failed to upload video thumbnail.');
+                            }
                         }
-                        
-                        // // Generate and upload thumbnail
-                        // $media_thumbnail = null;
-                        // $thumb_file_name = mt_rand() . time() . '.png';
-                        // $tempThumbPath = storage_path("app/{$thumb_file_name}");
-                        // $cmdThumb = "ffmpeg -ss 00:00:02 -i \"$tempVideoPath\" -frames:v 1 \"$tempThumbPath\"";
-                        // exec($cmdThumb);
-                        
-                        // if (file_exists($tempThumbPath)) {
-                        //     $thumb_stream = fopen($tempThumbPath, 'r');
-                        //     $thumb_s3_path = 'media/thumb/' . $thumb_file_name;
-                        //     $thumbUploadSuccess = Storage::disk('s3')->writeStream($thumb_s3_path, $thumb_stream);
-                        //     fclose($thumb_stream);
-                        
-                        //     if ($thumbUploadSuccess) {
-                        //         $media_thumbnail = $thumb_s3_path;
-                        //     } else {
-                        //         Log::error('Failed to upload video thumbnail.');
-                        //     }
-                        // }
                         
                         // Clean up temp files (optional)
                         @unlink($tempVideoPath);
-                        // @unlink($tempThumbPath);
+                        @unlink($tempThumbPath);
                         
                         // Store the master .m3u8 path in DB (optional)
                         $media_path = "media/hls/{$base_name}/180p.m3u8";
@@ -1242,9 +1263,21 @@ ffmpeg -i \"$tempVideoPath\" \
                             'output_tail' => implode("\n", array_slice($ffmpegOutput, -25)),
                         ]);
 
-                        $hlsStats = $this->uploadHlsDirectoryToS3($localHlsDir, (string) $base_name);
-                        if ($hlsStats['failed'] > 0) {
-                            Log::warning('HLS S3: some files failed (edit post)', $hlsStats);
+                        // Upload all HLS files to S3
+                        $hlsFiles = scandir($localHlsDir);
+                        foreach ($hlsFiles as $file) {
+                            if (in_array($file, ['.', '..'])) continue;
+                        
+                            $filePath = $localHlsDir . '/' . $file;
+                            $fileStream = fopen($filePath, 'r');
+                            $s3Path = "media/hls/{$base_name}/" . $file;
+                        
+                            $uploadSuccess = Storage::disk('s3')->writeStream($s3Path, $fileStream);
+                            fclose($fileStream);
+                        
+                            if (!$uploadSuccess) {
+                                Log::error("Failed to upload HLS file to S3: $file");
+                            }
                         }
                         
                         // Generate and upload thumbnail
@@ -2748,165 +2781,6 @@ ffmpeg -i \"$tempVideoPath\" \
     }
 
     /**
-     * Upload every file from a local HLS directory to S3 under media/hls/{baseName}/.
-     * Checks writeStream return value (with AWS_THROW=false, failures return false — they do not throw).
-     *
-     * @return array{uploaded: int, failed: int, files: array<int, array<string, mixed>>}
-     */
-    private function uploadHlsDirectoryToS3(string $localHlsDir, string $baseName): array
-    {
-        $prefix = 'media/hls/' . $baseName;
-        $uploaded = 0;
-        $failed = 0;
-        $details = [];
-
-        if (!is_dir($localHlsDir)) {
-            Log::error('HLS S3: local directory missing', ['dir' => $localHlsDir, 's3_prefix' => $prefix]);
-
-            return ['uploaded' => 0, 'failed' => 0, 'files' => []];
-        }
-
-        $hlsFiles = scandir($localHlsDir);
-        if ($hlsFiles === false) {
-            Log::error('HLS S3: scandir failed', ['dir' => $localHlsDir]);
-
-            return ['uploaded' => 0, 'failed' => 0, 'files' => []];
-        }
-
-        $names = array_values(array_filter(
-            $hlsFiles,
-            fn ($f) => !in_array($f, ['.', '..'], true)
-        ));
-
-        Log::info('HLS S3: starting batch upload', [
-            'local_dir' => $localHlsDir,
-            's3_prefix' => $prefix,
-            'bucket' => config('filesystems.disks.s3.bucket'),
-            'region' => config('filesystems.disks.s3.region'),
-            'endpoint' => config('filesystems.disks.s3.endpoint'),
-            'file_count' => count($names),
-            'files' => $names,
-        ]);
-
-        $diagnosticLogged = false;
-
-        foreach ($names as $file) {
-            $filePath = $localHlsDir . DIRECTORY_SEPARATOR . $file;
-            $s3Path = $prefix . '/' . $file;
-
-            if (!is_file($filePath) || !is_readable($filePath)) {
-                Log::warning('HLS S3: skip non-file or unreadable', ['path' => $filePath]);
-                $failed++;
-                $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'not_readable'];
-
-                continue;
-            }
-
-            $ok = false;
-            $fileStream = @fopen($filePath, 'rb');
-            if ($fileStream !== false) {
-                try {
-                    $ok = Storage::disk('s3')->writeStream($s3Path, $fileStream);
-                } catch (\Throwable $e) {
-                    Log::error('HLS S3: writeStream threw', [
-                        's3_path' => $s3Path,
-                        'exception' => $e::class,
-                        'message' => $e->getMessage(),
-                    ]);
-                    $ok = false;
-                } finally {
-                    if (is_resource($fileStream)) {
-                        fclose($fileStream);
-                    }
-                }
-            } else {
-                Log::error('HLS S3: fopen failed', ['path' => $filePath]);
-            }
-
-            if (!$ok) {
-                $body = @file_get_contents($filePath);
-                if ($body !== false) {
-                    try {
-                        $ok = Storage::disk('s3')->put($s3Path, $body);
-                    } catch (\Throwable $e) {
-                        Log::error('HLS S3: put() fallback threw', [
-                            's3_path' => $s3Path,
-                            'exception' => $e::class,
-                            'message' => $e->getMessage(),
-                        ]);
-                        $ok = false;
-                    }
-                    if ($ok) {
-                        Log::info('HLS S3: uploaded via put() after writeStream failed', [
-                            's3_path' => $s3Path,
-                            'bytes' => strlen($body),
-                        ]);
-                    }
-                }
-            }
-
-            if ($ok) {
-                $uploaded++;
-                $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => true];
-                Log::info('HLS S3: uploaded successfully', ['file' => $file, 's3_path' => $s3Path]);
-            } else {
-                $failed++;
-                $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'write_failed'];
-                Log::error('HLS S3: upload failed after writeStream and put fallback', [
-                    's3_path' => $s3Path,
-                    'local_size' => @filesize($filePath) ?: null,
-                ]);
-                $this->logHlsS3ThrowingDiskDiagnosticOnce($diagnosticLogged, $s3Path);
-                // $diagnosticLogged updated by ref inside (log once per batch)
-            }
-        }
-
-        Log::info('HLS S3: batch complete', [
-            'uploaded' => $uploaded,
-            'failed' => $failed,
-            'bucket' => config('filesystems.disks.s3.bucket'),
-        ]);
-
-        return ['uploaded' => $uploaded, 'failed' => $failed, 'files' => $details];
-    }
-
-    /**
-     * When writeStream/put return false with AWS_THROW=false, AWS never surfaces the reason.
-     * Run one small PutObject with throw=true and log the real exception (once per batch).
-     */
-    private function logHlsS3ThrowingDiskDiagnosticOnce(bool &$logged, string $failingS3Path): void
-    {
-        if ($logged) {
-            return;
-        }
-        $logged = true;
-
-        $base = config('filesystems.disks.s3');
-        if (! is_array($base) || ($base['driver'] ?? '') !== 's3') {
-            return;
-        }
-
-        try {
-            $cfg = array_merge($base, ['throw' => true]);
-            $disk = Storage::build($cfg);
-            $dir = dirname($failingS3Path);
-            $probeKey = ($dir !== '.' && $dir !== '' ? $dir . '/' : '') . '.hls-s3-probe-' . uniqid('', true) . '.txt';
-            $disk->put($probeKey, 'bloomrate-probe');
-            $disk->delete($probeKey);
-            Log::warning('HLS S3: throwing-disk probe in same prefix succeeded — S3 accepts writes here; compare failing key (length/chars) or retry without ACL/KMS issues.', [
-                'failing_s3_path' => $failingS3Path,
-                'probe_key' => $probeKey,
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('HLS S3: throwing-disk probe FAILED — fix using this AWS error (IAM, ACL blocked, DNS, TLS, clock, endpoint)', [
-                'message' => $e->getMessage(),
-                'exception' => $e::class,
-                'failing_s3_path' => $failingS3Path,
-            ]);
-        }
-    }
-
-    /**
      * PHP's exec() on Windows runs via cmd.exe, which does not treat backslash-newline as
      * command continuation (unlike bash). Collapse ffmpeg scripts to one line so they run fully.
      */
@@ -2917,4 +2791,101 @@ ffmpeg -i \"$tempVideoPath\" \
 
         return $one;
     }
+
+    // /**
+    //  * Upload every file from a local HLS directory to S3 under media/hls/{baseName}/.
+    //  * Logs bucket/region, per-file results, fopen/writeStream failures, and thrown exceptions.
+    //  *
+    //  * @return array{uploaded: int, failed: int, files: array<int, array<string, mixed>>}
+    //  */
+    // private function uploadHlsDirectoryToS3(string $localHlsDir, string $baseName): array
+    // {
+    //     $prefix = 'media/hls/' . $baseName;
+    //     $uploaded = 0;
+    //     $failed = 0;
+    //     $details = [];
+
+    //     if (!is_dir($localHlsDir)) {
+    //         Log::error('HLS S3: local directory missing', ['dir' => $localHlsDir, 's3_prefix' => $prefix]);
+
+    //         return ['uploaded' => 0, 'failed' => 0, 'files' => []];
+    //     }
+
+    //     $hlsFiles = scandir($localHlsDir);
+    //     if ($hlsFiles === false) {
+    //         Log::error('HLS S3: scandir failed', ['dir' => $localHlsDir]);
+
+    //         return ['uploaded' => 0, 'failed' => 0, 'files' => []];
+    //     }
+
+    //     $names = array_values(array_filter(
+    //         $hlsFiles,
+    //         fn ($f) => !in_array($f, ['.', '..'], true)
+    //     ));
+
+    //     Log::info('HLS S3: starting batch upload', [
+    //         'local_dir' => $localHlsDir,
+    //         's3_prefix' => $prefix,
+    //         'bucket' => config('filesystems.disks.s3.bucket'),
+    //         'region' => config('filesystems.disks.s3.region'),
+    //         'endpoint' => config('filesystems.disks.s3.endpoint'),
+    //         'file_count' => count($names),
+    //         'files' => $names,
+    //     ]);
+
+    //     foreach ($names as $file) {
+    //         $filePath = $localHlsDir . DIRECTORY_SEPARATOR . $file;
+    //         $s3Path = $prefix . '/' . $file;
+
+    //         if (!is_file($filePath) || !is_readable($filePath)) {
+    //             Log::warning('HLS S3: skip non-file or unreadable', ['path' => $filePath]);
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'not_readable'];
+
+    //             continue;
+    //         }
+
+    //         $fileStream = @fopen($filePath, 'rb');
+    //         if ($fileStream === false) {
+    //             Log::error('HLS S3: fopen failed', ['path' => $filePath]);
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'fopen_failed'];
+
+    //             continue;
+    //         }
+
+    //         $ok = false;
+    //         try {
+    //             $ok = Storage::disk('s3')->writeStream($s3Path, $fileStream);
+    //         } catch (\Throwable $e) {
+    //             Log::error('HLS S3: writeStream threw', [
+    //                 's3_path' => $s3Path,
+    //                 'exception' => $e::class,
+    //                 'message' => $e->getMessage(),
+    //             ]);
+    //             $ok = false;
+    //         } finally {
+    //             if (is_resource($fileStream)) {
+    //                 fclose($fileStream);
+    //             }
+    //         }
+
+    //         if ($ok) {
+    //             $uploaded++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => true];
+    //         } else {
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'write_failed'];
+    //             Log::error('HLS S3: writeStream returned false', ['s3_path' => $s3Path]);
+    //         }
+    //     }
+
+    //     Log::info('HLS S3: batch complete', [
+    //         'uploaded' => $uploaded,
+    //         'failed' => $failed,
+    //         'bucket' => config('filesystems.disks.s3.bucket'),
+    //     ]);
+
+    //     return ['uploaded' => $uploaded, 'failed' => $failed, 'files' => $details];
+    // }
 }
