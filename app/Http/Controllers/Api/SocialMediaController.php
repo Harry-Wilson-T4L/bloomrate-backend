@@ -1023,10 +1023,19 @@ ffmpeg -i \"$tempVideoPath\" \
                         // $cmd = "ffmpeg -i \"$tempVideoPath\" -c:v libx264 -preset medium -g 48 -keyint_min 48 -sc_threshold 0 -movflags +faststart -c:a aac -ar 48000 -b:a 128k -filter:v:0 'scale=426:240:force_original_aspect_ratio=decrease,pad=426:240:(ow-iw)/2:(oh-ih)/2' -b:v:0 400k -filter:v:1 'scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2' -b:v:1 800k -filter:v:2 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2' -b:v:2 1500k -hls_time 6 -hls_list_size 0 -hls_flags independent_segments -hls_segment_filename \"$localHlsDir/%v_%03d.ts\" -var_stream_map \"v:0,a:0 v:1,a:0 v:2,a:0\" -master_pl_name \"$localHlsDir/master.m3u8\" \"$localHlsDir/output_%v.m3u8\"";
 
                         
-                        exec($cmd);
-                           //code...
-                        
-                        // Upload all HLS files to S3
+                        $execCmd = $this->shellSingleLineFfmpegCommand($cmd);
+                        $ffmpegOutput = [];
+                        $ffmpegExit = 0;
+                        exec($execCmd . ' 2>&1', $ffmpegOutput, $ffmpegExit);
+                        $ffmpegOutputStr = implode("\n", $ffmpegOutput);
+                        Log::info('HLS ffmpeg exec finished', [
+                            'exit_code' => $ffmpegExit,
+                            'base_name' => $base_name,
+                            'local_hls_dir' => $localHlsDir,
+                            'output_tail' => implode("\n", array_slice($ffmpegOutput, -25)),
+                            'output_full' => strlen($ffmpegOutputStr) > 8000 ? substr($ffmpegOutputStr, 0, 8000) . '...' : $ffmpegOutputStr,
+                        ]);
+
                         $hlsFiles = scandir($localHlsDir);
                         foreach ($hlsFiles as $file) {
                             if (in_array($file, ['.', '..'])) continue;
@@ -1227,8 +1236,17 @@ ffmpeg -i \"$tempVideoPath\" \
                         
                         // FFmpeg: Convert video to HLS (m3u8 + chunks)
                         $cmd = "ffmpeg -i \"$tempVideoPath\" -codec: copy -start_number 0 -hls_time 10 -hls_list_size 0 -f hls \"$localHlsDir/playlist.m3u8\"";
-                        exec($cmd);
-                        
+                        $execCmd = $this->shellSingleLineFfmpegCommand($cmd);
+                        $ffmpegOutput = [];
+                        $ffmpegExit = 0;
+                        exec($execCmd . ' 2>&1', $ffmpegOutput, $ffmpegExit);
+                        Log::info('HLS ffmpeg exec finished (edit post)', [
+                            'exit_code' => $ffmpegExit,
+                            'base_name' => $base_name,
+                            'local_hls_dir' => $localHlsDir,
+                            'output_tail' => implode("\n", array_slice($ffmpegOutput, -25)),
+                        ]);
+
                         // Upload all HLS files to S3
                         $hlsFiles = scandir($localHlsDir);
                         foreach ($hlsFiles as $file) {
@@ -2744,7 +2762,114 @@ ffmpeg -i \"$tempVideoPath\" \
     private function reaction_types($postId)
     {
         return Like::where(['record_id' => $postId, 'like_type' => 'post'])->groupBy('record_id', 'reaction_type')->pluck('reaction_type');
-     }
+    }
 
-    
+    /**
+     * PHP's exec() on Windows runs via cmd.exe, which does not treat backslash-newline as
+     * command continuation (unlike bash). Collapse ffmpeg scripts to one line so they run fully.
+     */
+    private function shellSingleLineFfmpegCommand(string $cmd): string
+    {
+        $one = preg_replace('/\\\s*\r?\n\s*/', ' ', $cmd);
+        $one = preg_replace('/\s+/u', ' ', trim($one));
+
+        return $one;
+    }
+
+    // /**
+    //  * Upload every file from a local HLS directory to S3 under media/hls/{baseName}/.
+    //  * Logs bucket/region, per-file results, fopen/writeStream failures, and thrown exceptions.
+    //  *
+    //  * @return array{uploaded: int, failed: int, files: array<int, array<string, mixed>>}
+    //  */
+    // private function uploadHlsDirectoryToS3(string $localHlsDir, string $baseName): array
+    // {
+    //     $prefix = 'media/hls/' . $baseName;
+    //     $uploaded = 0;
+    //     $failed = 0;
+    //     $details = [];
+
+    //     if (!is_dir($localHlsDir)) {
+    //         Log::error('HLS S3: local directory missing', ['dir' => $localHlsDir, 's3_prefix' => $prefix]);
+
+    //         return ['uploaded' => 0, 'failed' => 0, 'files' => []];
+    //     }
+
+    //     $hlsFiles = scandir($localHlsDir);
+    //     if ($hlsFiles === false) {
+    //         Log::error('HLS S3: scandir failed', ['dir' => $localHlsDir]);
+
+    //         return ['uploaded' => 0, 'failed' => 0, 'files' => []];
+    //     }
+
+    //     $names = array_values(array_filter(
+    //         $hlsFiles,
+    //         fn ($f) => !in_array($f, ['.', '..'], true)
+    //     ));
+
+    //     Log::info('HLS S3: starting batch upload', [
+    //         'local_dir' => $localHlsDir,
+    //         's3_prefix' => $prefix,
+    //         'bucket' => config('filesystems.disks.s3.bucket'),
+    //         'region' => config('filesystems.disks.s3.region'),
+    //         'endpoint' => config('filesystems.disks.s3.endpoint'),
+    //         'file_count' => count($names),
+    //         'files' => $names,
+    //     ]);
+
+    //     foreach ($names as $file) {
+    //         $filePath = $localHlsDir . DIRECTORY_SEPARATOR . $file;
+    //         $s3Path = $prefix . '/' . $file;
+
+    //         if (!is_file($filePath) || !is_readable($filePath)) {
+    //             Log::warning('HLS S3: skip non-file or unreadable', ['path' => $filePath]);
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'not_readable'];
+
+    //             continue;
+    //         }
+
+    //         $fileStream = @fopen($filePath, 'rb');
+    //         if ($fileStream === false) {
+    //             Log::error('HLS S3: fopen failed', ['path' => $filePath]);
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'fopen_failed'];
+
+    //             continue;
+    //         }
+
+    //         $ok = false;
+    //         try {
+    //             $ok = Storage::disk('s3')->writeStream($s3Path, $fileStream);
+    //         } catch (\Throwable $e) {
+    //             Log::error('HLS S3: writeStream threw', [
+    //                 's3_path' => $s3Path,
+    //                 'exception' => $e::class,
+    //                 'message' => $e->getMessage(),
+    //             ]);
+    //             $ok = false;
+    //         } finally {
+    //             if (is_resource($fileStream)) {
+    //                 fclose($fileStream);
+    //             }
+    //         }
+
+    //         if ($ok) {
+    //             $uploaded++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => true];
+    //         } else {
+    //             $failed++;
+    //             $details[] = ['file' => $file, 's3_path' => $s3Path, 'ok' => false, 'reason' => 'write_failed'];
+    //             Log::error('HLS S3: writeStream returned false', ['s3_path' => $s3Path]);
+    //         }
+    //     }
+
+    //     Log::info('HLS S3: batch complete', [
+    //         'uploaded' => $uploaded,
+    //         'failed' => $failed,
+    //         'bucket' => config('filesystems.disks.s3.bucket'),
+    //     ]);
+
+    //     return ['uploaded' => $uploaded, 'failed' => $failed, 'files' => $details];
+    // }
 }
