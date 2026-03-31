@@ -100,7 +100,7 @@ class PostResource extends JsonResource
 
             'reaction_types'    => $this->likes->pluck('reaction_type')->unique()->values(),
 
-            'total_share_count' => $this->shares_count ?? 0, // preload with withCount in controller
+            'total_share_count' => $this->resolveTotalShareCount(),
 
             'saves_count'       => $this->saves_count ?? 0,
             'favorites_count'   => $this->favorites_count ?? 0,
@@ -113,6 +113,26 @@ class PostResource extends JsonResource
     }
 
 
+
+    /**
+     * Share rows are new posts with parent_id = original; their own shares_count is reshares of
+     * the wrapper. Show the original post's share tally when this row is a share.
+     */
+    private function resolveTotalShareCount(): int
+    {
+        if ($this->isSharePost() && $this->parent_id) {
+            if ($this->relationLoaded('parent_post') && $this->parent_post !== null) {
+                return (int) ($this->parent_post->shares_count ?? 0);
+            }
+        }
+
+        return (int) ($this->shares_count ?? 0);
+    }
+
+    private function isSharePost(): bool
+    {
+        return (string) $this->is_share === '1';
+    }
 
     private function reaction_types($postId)
     {

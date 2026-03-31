@@ -73,7 +73,7 @@ class Post extends Model
     }
     
     public function shares() {
-        return $this->hasMany(Post::class, 'parent_id')->where('is_share', 1);
+        return $this->hasMany(Post::class, 'parent_id')->where('is_share', '1');
     }
     
 }
