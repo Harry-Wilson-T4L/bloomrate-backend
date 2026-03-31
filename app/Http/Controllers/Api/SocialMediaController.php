@@ -1037,19 +1037,35 @@ ffmpeg -i \"$tempVideoPath\" \
                         ]);
 
                         $hlsFiles = scandir($localHlsDir);
+
                         foreach ($hlsFiles as $file) {
                             if (in_array($file, ['.', '..'])) continue;
                         
                             $filePath = $localHlsDir . '/' . $file;
+                        
                             $fileStream = fopen($filePath, 'r');
-                            $s3Path = "media/hls/{$base_name}/" . $file;
                         
-                            $uploadSuccess = Storage::disk('s3')->writeStream($s3Path, $fileStream);
-                            fclose($fileStream);
-                        
-                            if (!$uploadSuccess) {
-                                Log::error("Failed to upload HLS file to S3: $file");
+                            if (!$fileStream) {
+                                Log::error("Failed to open file: {$filePath}");
+                                continue;
                             }
+                        
+                            $s3Path = "media/hls/{$base_name}/{$file}";
+                        
+                            try {
+                                Storage::disk('s3')->writeStream($s3Path, $fileStream);
+                        
+                                Log::info("Uploaded successfully: {$file}");
+                        
+                            } catch (\Throwable $e) {
+                                Log::error("S3 Upload Failed: {$file}", [
+                                    'message' => $e->getMessage(),
+                                    'code' => $e->getCode(),
+                                    'trace' => $e->getTraceAsString(),
+                                ]);
+                            }
+                        
+                            fclose($fileStream);
                         }
                         
                         // Generate and upload thumbnail
