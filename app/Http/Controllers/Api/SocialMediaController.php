@@ -837,19 +837,19 @@ if ($hasAudio) {
 $cmd = "
 ffmpeg -i \"$tempVideoPath\" \
   -map 0:v:0 -map 0:a:0 \
-  -c:v:0 libx264 -b:v:0 250k -s:v:0 256x144 -preset fast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:0 libx264 -b:v:0 250k -filter:v:0 \"scale='if(gt(iw/ih,1),256,-2)':'if(gt(iw/ih,1),-2,256)'\" -preset fast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -c:a:0 aac -b:a:0 64k -ac 2 \
   -map 0:v:0 -map 0:a:0 \
-  -c:v:1 libx264 -b:v:1 350k -s:v:1 320x180 -preset fast -profile:v:1 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:1 libx264 -b:v:1 350k -filter:v:1 \"scale='if(gt(iw/ih,1),320,-2)':'if(gt(iw/ih,1),-2,320)'\" -preset fast -profile:v:1 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -c:a:1 aac -b:a:1 80k -ac 2 \
   -map 0:v:0 -map 0:a:0 \
-  -c:v:2 libx264 -b:v:2 800k -s:v:2 426x240 -preset fast -profile:v:2 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:2 libx264 -b:v:2 800k -filter:v:2 \"scale='if(gt(iw/ih,1),426,-2)':'if(gt(iw/ih,1),-2,426)'\" -preset fast -profile:v:2 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -c:a:2 aac -b:a:2 96k -ac 2 \
   -map 0:v:0 -map 0:a:0 \
-  -c:v:3 libx264 -b:v:3 1400k -s:v:3 640x360 -preset fast -profile:v:3 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:3 libx264 -b:v:3 1400k -filter:v:3 \"scale='if(gt(iw/ih,1),640,-2)':'if(gt(iw/ih,1),-2,640)'\" -preset fast -profile:v:3 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -c:a:3 aac -b:a:3 128k -ac 2 \
   -map 0:v:0 -map 0:a:0 \
-  -c:v:4 libx264 -b:v:4 2500k -s:v:4 1280x720 -preset fast -profile:v:4 high -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:4 libx264 -b:v:4 2500k -filter:v:4 \"scale='if(gt(iw/ih,1),1280,-2)':'if(gt(iw/ih,1),-2,1280)'\" -preset fast -profile:v:4 high -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -c:a:4 aac -b:a:4 128k -ac 2 \
   -hls_time 4 \
   -hls_playlist_type vod \
@@ -904,15 +904,15 @@ ffmpeg -i \"$tempVideoPath\" \
 $cmd = "
 ffmpeg -i \"$tempVideoPath\" \
   -map 0:v:0 \
-  -c:v:0 libx264 -b:v:0 250k -s:v:0 256x144 -preset fast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:0 libx264 -b:v:0 250k -filter:v:0 \"scale='if(gt(iw/ih,1),256,-2)':'if(gt(iw/ih,1),-2,256)'\" -preset fast -profile:v:0 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -map 0:v:0 \
-  -c:v:1 libx264 -b:v:1 350k -s:v:1 320x180 -preset fast -profile:v:1 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:1 libx264 -b:v:1 350k -filter:v:1 \"scale='if(gt(iw/ih,1),320,-2)':'if(gt(iw/ih,1),-2,320)'\" -preset fast -profile:v:1 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -map 0:v:0 \
-  -c:v:2 libx264 -b:v:2 800k -s:v:2 426x240 -preset fast -profile:v:2 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:2 libx264 -b:v:2 800k -filter:v:2 \"scale='if(gt(iw/ih,1),426,-2)':'if(gt(iw/ih,1),-2,426)'\" -preset fast -profile:v:2 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -map 0:v:0 \
-  -c:v:3 libx264 -b:v:3 1400k -s:v:3 640x360 -preset fast -profile:v:3 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:3 libx264 -b:v:3 1400k -filter:v:3 \"scale='if(gt(iw/ih,1),640,-2)':'if(gt(iw/ih,1),-2,640)'\" -preset fast -profile:v:3 baseline -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -map 0:v:0 \
-  -c:v:4 libx264 -b:v:4 2500k -s:v:4 1280x720 -preset fast -profile:v:4 high -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
+  -c:v:4 libx264 -b:v:4 2500k -filter:v:4 \"scale='if(gt(iw/ih,1),1280,-2)':'if(gt(iw/ih,1),-2,1280)'\" -preset fast -profile:v:4 high -g 60 -keyint_min 60 -sc_threshold 0 -b_strategy 0 \
   -hls_time 2 \
   -hls_playlist_type vod \
   -var_stream_map \"v:0,name:144p v:1,name:180p v:2,name:240p v:3,name:360p v:4,name:720p\" \
